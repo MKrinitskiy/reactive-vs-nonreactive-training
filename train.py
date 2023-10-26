@@ -1,9 +1,11 @@
+from ast import arg
 import os
 import sys
 from os.path import join, isfile, isdir
 from tqdm import tqdm
 import numpy as np
 import warnings
+import json
 
 from libs.sgdr_restarts_warmup import CosineAnnealingWarmupRestarts
 
@@ -73,6 +75,8 @@ def main(args=None):
     copytree_multi('./', scripts_backup_dir, ignore=ignore_func)
     with open(os.path.join(scripts_backup_dir, 'launch_parameters.txt'), 'w+') as f:
         f.writelines([f'{s}\n' for s in sys.argv])
+    with open(os.path.join(scripts_backup_dir, 'commandline_args.json'), 'w') as f:
+        json.dump(args.__dict__, f, indent=2)
     if DoesPathExistAndIsFile(args.csv_train):
         copy2(args.csv_train, os.path.join(scripts_backup_dir, os.path.basename(args.csv_train)))
     if DoesPathExistAndIsFile(args.csv_test):
@@ -160,15 +164,30 @@ def main(args=None):
     model.training = True
 
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
-    # scheduler = ConstantLR(optimizer=optimizer, lr=1e-4)
-    scheduler = CosineAnnealingWarmupRestarts(optimizer=optimizer,
-                                              first_cycle_steps = 16,
-                                              cycle_mult = 1.5,
-                                              max_lr = 1e-4,
-                                              min_lr = 1e-8,
-                                              warmup_steps = 8,
-                                              gamma = 0.7,
-                                              last_epoch = -1)
+    if args.scheduler == 'constant':
+        scheduler = ConstantLR(optimizer=optimizer, lr=1e-4)
+    elif args.scheduler == 'sgdr':
+        scheduler = CosineAnnealingWarmupRestarts(optimizer=optimizer,
+                                                first_cycle_steps = args.first_cycle_steps,
+                                                cycle_mult = args.cycle_mult,
+                                                max_lr = args.max_lr,
+                                                min_lr = args.min_lr,
+                                                warmup_steps = args.warmup_steps,
+                                                gamma = args.gamma,
+                                                last_epoch = -1)
+    EPOCHS = None
+    if 'epochs' in args.__dict__.keys():
+        if args.epochs is not None:
+            EPOCHS = args.epochs
+            print('"epochs" is in args.__dict__.keys()')
+            print('EPOCHS=%d' % EPOCHS)
+    
+    if ((EPOCHS is None) and ('cycles' in args.__dict__.keys())):
+        if args.cycles is not None:
+            EPOCHS = scheduler.epochs_num_from_cycles(args.cycles)
+            print('"cycles" is in args.__dict__.keys()')
+            print('EPOCHS=%d' % EPOCHS)
+
     model.train()
 
     tb_writer = SummaryWriter(log_dir=tb_basepath)
@@ -181,8 +200,8 @@ def main(args=None):
     best_test_epoches = []
 
     try:
-        for epoch in range(args.epochs):
-            print(f'Epoch {epoch} / {args.epochs}')
+        for epoch in range(EPOCHS):
+            print(f'Epoch {epoch} / {EPOCHS}')
 
             train_loss, train_accuracy = train_single_epoch(model,
                                                             optimizer,
@@ -197,6 +216,7 @@ def main(args=None):
             
             tb_writer.add_scalar('train_loss_per_epoch', train_loss, epoch)
             tb_writer.add_scalar('train_accuracy_per_epoch', train_accuracy, epoch)
+            tb_writer.add_scalar('LR', scheduler.get_lr()[0], epoch)
 
             if scheduler is not None:
                 scheduler.step()
@@ -231,7 +251,7 @@ def main(args=None):
                 best_test_accuracy = test_accuracy
                 best_test_epoch = epoch
 
-            if epoch == args.epochs-1:
+            if epoch == EPOCHS-1:
                 torch.save(model, os.path.join(checkpoints_basepath, f'model_ep{epoch}.pt'))
 
 

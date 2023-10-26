@@ -5,6 +5,7 @@ from functools import wraps
 import warnings
 import weakref
 from torch.optim import Optimizer
+import numpy as np
 
 EPOCH_DEPRECATION_WARNING = (
     "The epoch parameter in `scheduler.step()` was not necessary and is being "
@@ -235,3 +236,10 @@ class CosineAnnealingWarmupRestarts(_LRScheduler):
         self.last_epoch = math.floor(epoch)
         for param_group, lr in zip(self.optimizer.param_groups, self.get_lr()):
             param_group['lr'] = lr
+    
+    def epochs_num_from_cycles(self, cycles_num=3):
+        length = 0
+        for c in range(cycles_num):
+            curr_cycle_length = (self.first_cycle_steps-self.warmup_steps) * np.power(self.cycle_mult, c) + self.warmup_steps
+            length = length + int(np.floor(curr_cycle_length))
+        return length

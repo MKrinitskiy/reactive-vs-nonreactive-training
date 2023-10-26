@@ -35,7 +35,7 @@ def train_single_epoch(model: torch.nn.Module,
     model.train()
     loss_values = []
     loss_tb = []
-    pbar = tqdm(total=per_step_epoch, ncols=100)
+    pbar = tqdm(total=per_step_epoch, dynamic_ncols=True)
     pbar.set_description(desc='train')
 
     warning_elapsed = False
@@ -99,7 +99,7 @@ def validate_single_epoch(model: torch.nn.Module,
     true_labels = []
     model_labels = []
 
-    pbar = tqdm(total=per_step_epoch, ncols=100)
+    pbar = tqdm(total=per_step_epoch, dynamic_ncols=True)
     pbar.set_description(desc='validation')
     for batch_idx in range(per_step_epoch):
         batch = cuda_batches_queue.get(block=True)
